@@ -1,0 +1,24 @@
+---
+title: "Sandbox"
+output: html_notebook
+---
+
+# Data Exploration
+
+```{r}
+#Read in data
+events = read.csv('../Data/events.csv',header=TRUE)
+
+#Obtain summary data
+summary(events)
+```
+```{r}
+# Extract observations of shots from the events data 
+shots <- events[events$event_type == 1, ]
+```
+
+```{r}
+# View head of data
+shots
+```
+
