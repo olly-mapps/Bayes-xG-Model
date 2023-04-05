@@ -3,22 +3,79 @@ title: "Sandbox"
 output: html_notebook
 ---
 
-# Data Exploration
+#Libraries
+```{r}
+library(dplyr)
+library(MASS)
+library(rstanarm)
+```
+
+# Data Loading
 
 ```{r}
 #Read in data
-events = read.csv('../Data/events.csv',header=TRUE)
+events <- read.csv('../Data/events.csv',header=TRUE)
 
 #Obtain summary data
 summary(events)
 ```
 ```{r}
 # Extract observations of shots from the events data 
-shots <- events[events$event_type == 1, ]
+shots_df <- events[events$event_type == 1, ]
 ```
 
 ```{r}
 # View head of data
+shots_df
+```
+
+```{r}
+#Keep only relevant data
+shots <- dplyr::select(shots_df, c('is_goal','location','bodypart',
+                            'assist_method','situation','fast_break')) 
+```
+
+```{r}
+#Convert variables to factor 
+
+shots <- shots %>% mutate_if(is.integer,as.factor)
+```
+
+```{r}
 shots
 ```
+
+```{r}
+# Split into test and train subsets
+train.size <- nrow(shots) / 2
+train <- sample(1:nrow(shots), train.size)
+test <- -train
+shots.train <- shots[train, ]
+shots.test <- shots[test, ]
+is_goal.test <-  shots$is_goal[test]
+```
+
+# Data Exploration
+
+# Fitting Models
+
+## Simple Logistic Regression 
+
+```{r}
+#Fit Logistic Regression
+glm.fit <- glm(is_goal ~ ., family = "binomial", data = shots.train)
+
+#Calculate mis-classification
+glm.probs <-  predict(glm.fit, shots.test, type = "response")
+glm.pred <-  rep(0, length(glm.probs))
+glm.pred[glm.probs > 0.5] <- 1
+
+mean(glm.pred != is_goal.test)
+```
+## Bayesian Logistic Regression
+
+```{r}
+bmod = stan_glm(is_goal~ ,data=shots.train, family = binomial(link = "logit"))
+```
+
 
