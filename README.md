@@ -4,7 +4,9 @@
 
 Use Bayesian methods to model the effects of various factors on the liklehood of a goal.
 
-## Data: https://www.kaggle.com/datasets/secareanualin/football-events
+## Data: 
+
+https://www.kaggle.com/datasets/secareanualin/football-events
 
 ## Target Variable:
 
