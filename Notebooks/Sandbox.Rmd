@@ -5,23 +5,27 @@ output: html_notebook
 
 #Libraries
 ```{r}
+library(tidyverse)
 library(dplyr)
 library(MASS)
 library(rstanarm)
+library(ggplot2)
+library(data.table)
 ```
 
 # Data Loading
 
 ```{r}
 #Read in data
-events <- read.csv('../Data/events.csv',header=TRUE)
-
+events <- fread('../Data/features.csv', header=TRUE)
+ 
 #Obtain summary data
 summary(events)
 ```
+
 ```{r}
 # Extract observations of shots from the events data 
-shots_df <- events[events$event_type == 1, ]
+shots_df <- events %>% dplyr::filter(`type_name-0` == "shot" | `type_name-1` == "shot")
 ```
 
 ```{r}
@@ -42,20 +46,32 @@ shots <- shots %>% mutate_if(is.integer,as.factor)
 ```
 
 ```{r}
-shots
+dim(shots)
+```
+We observe from the above chunk that we have almost 300,000 observations, this could prove lengthy to fit a bayesian model to later on. Further, the `radon.csv` file used in lectures comparatively only has 1,000 observations. As such, I believe it suitable to randomly subsample about 20,000 observations.
+
+```{r}
+shots_sub <- shots %>% sample_n(1000)
+dim(shots_sub)
+```
+
+```{r}
+shots_sub
 ```
 
 ```{r}
 # Split into test and train subsets
-train.size <- nrow(shots) / 2
-train <- sample(1:nrow(shots), train.size)
+train.size <- nrow(shots_sub) / 2
+train <- sample(1:nrow(shots_sub), train.size)
 test <- -train
-shots.train <- shots[train, ]
-shots.test <- shots[test, ]
-is_goal.test <-  shots$is_goal[test]
+shots.train <- shots_sub[train, ]
+shots.test <- shots_sub[test, ]
+is_goal.test <-  shots_sub$is_goal[test]
 ```
 
 # Data Exploration
+
+**Insert Exploration Here If Necessary Later**
 
 # Fitting Models
 
@@ -63,7 +79,7 @@ is_goal.test <-  shots$is_goal[test]
 
 ```{r}
 #Fit Logistic Regression
-glm.fit <- glm(is_goal ~ ., family = "binomial", data = shots.train)
+glm.fit <- glm(is_goal ~ location+bodypart, family = "binomial", data = shots.train)
 
 #Calculate mis-classification
 glm.probs <-  predict(glm.fit, shots.test, type = "response")
@@ -74,8 +90,44 @@ mean(glm.pred != is_goal.test)
 ```
 ## Bayesian Logistic Regression
 
+### Bayesian Model 1 (location and bodypart)
+
 ```{r}
-bmod = stan_glm(is_goal~ ,data=shots.train, family = binomial(link = "logit"))
+#Fit the model
+bmod1 = stan_glm(is_goal~ location+bodypart ,data=shots.train, family = binomial)
+```
+```{r}
+#Model Summary
+bmod1
 ```
 
+```{r}
+#Summary data on the priors
+prior_summary(bmod)
+```
+```{r}
+#Retrieve and print posterior interval for the model
+ci95_1 <- posterior_interval(bmod1, prob = 0.95)
+round(ci95_1, 2)
+```
+```{r}
+#Launch shinystan
+launch_shinystan(bmod1, ppd = FALSE)
+```
+```{r}
+#Calculate misclassification
+bmod1.pred <-  posterior_predict(bmod1, shots.test, type = "response")
+
+mean(bmod1.pred != is_goal.test)
+```
+### Bayesian Model 2 (location and bodypart as heirarchical variable)
+
+```{r}
+bmod2 = stan_glmer(is_goal ~ location+(1 | bodypart) ,data=shots.train, family = binomial)
+```
+```{r}
+bmod2.pred <-  posterior_predict(bmod2, shots.test, type = "response")
+
+mean(bmod2.pred != is_goal.test)
+```
 
