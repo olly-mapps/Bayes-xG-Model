@@ -17,26 +17,48 @@ library(data.table)
 
 ```{r}
 #Read in data
-events <- fread('../Data/features.csv', header=TRUE)
+actions <- fread('../Data/actions.csv', header=TRUE)
  
 #Obtain summary data
-summary(events)
+summary(actions)
+```
+```{r}
+# Extract observations of shots from the actions data 
+shots_df <- actions %>% dplyr::filter(type_name == "shot")
 ```
 
 ```{r}
-# Extract observations of shots from the events data 
-shots_df <- events %>% dplyr::filter(`type_name-0` == "shot" | `type_name-1` == "shot")
+# Keep only necessary features
+shots <- dplyr::select(shots_df, c('result_id','bodypart_id', 'bodypart_name'))
+
+coords <- dplyr::select(shots_df, c('start_x','start_y','end_x',
+                            'end_y'))
+shots
 ```
 
+## Calculate Distance and Angle to goal
 ```{r}
-# View head of data
-shots_df
-```
+#Define position of goal
 
+GOAL_X = 0
+GOAL_Y = 68 / 2
+
+#Define differences for for calculations 
+diff <- data.frame(abs(GOAL_X - coords$start_x), 
+                   abs(GOAL_Y - coords$start_y))
+
+# Calculate distances
+dist <- data.frame(sqrt(diff[1]**2 + diff[2]**2))
+
+ifelse(diff$ != 0, 
+                         my_data$numerator / my_data$denominator, 
+                         0)
+```
 ```{r}
-#Keep only relevant data
-shots <- dplyr::select(shots_df, c('is_goal','location','bodypart',
-                            'assist_method','situation','fast_break')) 
+#Concatenate dataframes
+shots <- data.frame(shots, dist)
+
+shots
 ```
 
 ```{r}
