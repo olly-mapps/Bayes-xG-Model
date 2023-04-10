@@ -11,76 +11,191 @@ library(MASS)
 library(rstanarm)
 library(ggplot2)
 library(data.table)
+library(stringr)
+library(ggsoccer)
 ```
 
 # Data Loading
 
 ```{r}
-#Read in data
-actions <- fread('../Data/actions.csv', header=TRUE)
- 
-#Obtain summary data
-summary(actions)
+#Define Data Directory
+dir_path <- "../Data"
+
+#Get a list of files in the directory
+file_list <- list.files(dir_path)
+
+#Create an empty data frame to store the file contents
+actions <- data.frame()
+
+#Loop through the files and add their contents to the data frame
+for (i in 1:length(file_list)) {
+  #Read the file into a data frame
+  file_data <- fread(file.path(dir_path, file_list[i]))
+  
+  #Add the file data to the main data frame
+  actions <- rbind(actions, file_data)
+}
 ```
+
+```{r}
+#View the final data frame
+actions
+```
+
 ```{r}
 # Extract observations of shots from the actions data 
-shots_df <- actions %>% dplyr::filter(type_name == "shot")
+shots_df <- actions %>% dplyr::filter(subEventName == "Shot")
+shots_df
+```
+
+We now use documentation from [here](https://dataglossary.wyscout.com/shot/) to mutate the data, and garner more useful data about the shot itself. 
+
+```{r}
+shots_df <- shots_df %>% 
+  
+  #If the shot is successful
+  mutate('is_goal' = ifelse(grepl(" 101}", shots_df$tags),1,0), 
+         
+         #If the shot is at the end of a counter-attack
+         'is_CA' = ifelse(grepl(" 1901}", shots_df$tags),1,0),
+         
+         #If the shot is with the foot or another part of the body
+         'body_part' = ifelse(grepl(" 401}| 402}", shots_df$tags),"foot",
+                                   ifelse(grepl(" 403}", shots_df$tags), "head/body", "NA")),
+         
+         'is_blocked' = ifelse(grepl(" 2101}", shots_df$tags), 1,0))
+
+                    
+shots_df <- shots_df %>% dplyr::filter(is_blocked == 0)
+
+summary(shots_df)
+```
+
+First, we would like to define the position of each shot on the pitch
+
+```{r}
+#Extract all numeric entries from the positions column
+pos <- str_extract_all(gsub('"', "", shots_df$positions), "\\d+")
+
+#Define vectors to store coordinates
+x_pos <- c()
+y_pos <- c()
+
+#Loops that extract the coordinates
+for (i in 1:length(pos)){
+  x_pos <- append(x_pos, pos[[i]][2])
+}
+
+for (i in 1:length(pos)){
+  y_pos <- append(y_pos, pos[[i]][1])
+}
+
+#Convert coordinates to numeric data
+x_pos <- x_pos %>% as.numeric()
+y_pos <- y_pos %>% as.numeric()
 ```
 
 ```{r}
 # Keep only necessary features
-shots <- dplyr::select(shots_df, c('result_id','bodypart_id', 'bodypart_name'))
+shots <- dplyr::select(shots_df, c('playerId', 'is_goal', 'is_CA', 'body_part'))
 
-coords <- dplyr::select(shots_df, c('start_x','start_y','end_x',
-                            'end_y'))
-shots
+coords <- data.frame(x_pos, y_pos)
+
+summary(shots)
+
+summary(coords)
+
+graph_shots <- data.frame(shots, x_pos, y_pos)
 ```
+
+
 
 ## Calculate Distance and Angle to goal
 ```{r}
-#Define position of goal
+#Define length and width of pitch
 
-GOAL_X = 0
-GOAL_Y = 68 / 2
+pitch_x <- 105
+pitch_y <- 68
 
-#Define differences for for calculations 
-diff <- data.frame(abs(GOAL_X - coords$start_x), 
-                   abs(GOAL_Y - coords$start_y))
+#We now convert coordinates to meters
+x_meter <- coords$x_pos * pitch_x/100
+y_meter <- coords$y_pos * pitch_y/100
 
 # Calculate distances
-dist <- data.frame(sqrt(diff[1]**2 + diff[2]**2))
+dist <- sqrt((105 - x_meter)^2 + ((32.5) - y_meter)^2)
 
-ifelse(diff$ != 0, 
-                         my_data$numerator / my_data$denominator, 
-                         0)
+#Calculate angles
+angles <- atan( (7.32 * (105 - x_meter) ) / ( (105 - x_meter)^2 + (32.5 - y_meter)^2 - (7.32/2)^2 )) * 180/pi
 ```
+
 ```{r}
 #Concatenate dataframes
-shots <- data.frame(shots, dist)
-
-shots
+shots <- data.frame(shots, dist, angles)
 ```
 
 ```{r}
-#Convert variables to factor 
+#Convert necessary variables to factor 
 
-shots <- shots %>% mutate_if(is.integer,as.factor)
+shots$is_goal <- shots$is_goal %>% as.factor()
+
+shots$body_part <- shots$body_part %>% as.factor()
+
+shots$is_CA <- shots$is_CA %>% as.factor()
+
+summary(shots)
 ```
+We can see from the summary, there are negative angles in the data, to investigate this further we can look at a histogram
 
 ```{r}
-dim(shots)
+hist(shots$angles)
 ```
-We observe from the above chunk that we have almost 300,000 observations, this could prove lengthy to fit a bayesian model to later on. Further, the `radon.csv` file used in lectures comparatively only has 1,000 observations. As such, I believe it suitable to randomly subsample about 20,000 observations.
+We observe that there are some negative angles. Since most of the angles are correctly positive, I will remove the negative ones from the analysis.
 
 ```{r}
-shots_sub <- shots %>% sample_n(1000)
+shots <- shots %>% dplyr::filter(shots$angles > 0)
+```
+
+To see the correct histogram
+
+```{r}
+hist(shots$angles)
+```
+
+As expected, there are far more failed attempts at goal than successful ones. Taking advice from here, we will sub-sample to create a more balanced data-set.
+
+```{r}
+#Split Dataframe into success and fail shots
+#shots_success <- subset(shots, shots$result_id == 1)
+#shots_fail <- subset(shots, shots$result_id == 0)
+
+#Sample from each subset
+#shots_success <- shots_success %>% sample_n(10000)
+#shots_fail <- shots_fail %>% sample_n(10000)
+
+#Bind them back together
+#shots_sub <- rbind(shots_success, shots_fail)
+
+shots_sub <- shots
+```
+
+We see that the dimension is correct, and that the data is perfectly balanced.
+```{r}
 dim(shots_sub)
 ```
 
 ```{r}
-shots_sub
+summary(shots_sub)
 ```
 
+From this summary, we observe that distance and angles are extremely skewed, and so the next chunk applies a log transformation to these variables
+
+```{r}
+#Calculate log distances and angles
+shots_sub$dist <- log(shots_sub$dist)
+shots_sub$angles <- log(shots_sub$angles)
+```
+
+We can now split the data into train and test sets
 ```{r}
 # Split into test and train subsets
 train.size <- nrow(shots_sub) / 2
@@ -93,31 +208,77 @@ is_goal.test <-  shots_sub$is_goal[test]
 
 # Data Exploration
 
-**Insert Exploration Here If Necessary Later**
+To better understand our distance and angle data, we can create the following boxplots
+
+```{r}
+boxplot(dist ~ is_goal, data=shots_sub,xlab='Failure or Success', ylab = 'Distance to goal')
+```
+
+```{r}
+boxplot(angles ~ is_goal, data=shots_sub,xlab='Failure or Success', ylab = 'Angle to goal')
+```
+
+It is likely that distance and angles have some sort of relationship.
+
+```{r}
+plot(shots_sub$angles, shots_sub$dist)
+```
+We now visualise the distribution of distances 
+
+```{r}
+hist(shots_sub$dist)
+```
+And for the angles to goal 
 
 # Fitting Models
 
-## Simple Logistic Regression 
+## Simple Logistic Regression Models 
 
 ```{r}
 #Fit Logistic Regression
-glm.fit <- glm(is_goal ~ location+bodypart, family = "binomial", data = shots.train)
+glm_1 <- glm(is_goal ~ dist, family = "binomial", data = shots.train)
 
 #Calculate mis-classification
-glm.probs <-  predict(glm.fit, shots.test, type = "response")
-glm.pred <-  rep(0, length(glm.probs))
-glm.pred[glm.probs > 0.5] <- 1
+glm_1_probs <-  predict(glm_1, shots.test, type = "response")
+glm_1_pred <-  rep(0, length(glm_1_probs))
+glm_1_pred[glm_1_probs > 0.5] <- 1
 
-mean(glm.pred != is_goal.test)
+mean(glm_1_pred != is_goal.test)
 ```
+
+```{r}
+#Fit Logistic Regression
+glm_2 <- glm(is_goal ~ dist + angles, family = "binomial", data = shots.train)
+
+#Calculate mis-classification
+glm_2_probs <-  predict(glm_2, shots.test, type = "response")
+glm_2_pred <-  rep(0, length(glm_2_probs))
+glm_2_pred[glm_2_probs > 0.5] <- 1
+
+mean(glm_2_pred != is_goal.test)
+```
+```{r}
+#Fit Logistic Regression
+glm_3 <- glm(is_goal ~ dist + angles + body_part, family = "binomial", data = shots.train)
+
+#Calculate mis-classification
+glm_3_probs <-  predict(glm_3, shots.test, type = "response")
+glm_3_pred <-  rep(0, length(glm_3_probs))
+glm_3_pred[glm_3_probs > 0.5] <- 1
+
+mean(glm_3_pred != is_goal.test)
+```
+
+
 ## Bayesian Logistic Regression
 
-### Bayesian Model 1 (location and bodypart)
+### Bayesian Model 1 (distance)
 
 ```{r}
 #Fit the model
-bmod1 = stan_glm(is_goal~ location+bodypart ,data=shots.train, family = binomial)
+bmod1 = stan_glm(result_id ~ distance,data=shots.train, family = binomial)
 ```
+
 ```{r}
 #Model Summary
 bmod1
@@ -125,31 +286,54 @@ bmod1
 
 ```{r}
 #Summary data on the priors
-prior_summary(bmod)
+prior_summary(bmod1)
 ```
+
 ```{r}
 #Retrieve and print posterior interval for the model
 ci95_1 <- posterior_interval(bmod1, prob = 0.95)
 round(ci95_1, 2)
 ```
+
 ```{r}
 #Launch shinystan
 launch_shinystan(bmod1, ppd = FALSE)
 ```
+
 ```{r}
 #Calculate misclassification
 bmod1.pred <-  posterior_predict(bmod1, shots.test, type = "response")
 
 mean(bmod1.pred != is_goal.test)
 ```
-### Bayesian Model 2 (location and bodypart as heirarchical variable)
+### Bayesian Model 2 (distance + angles)
 
 ```{r}
-bmod2 = stan_glmer(is_goal ~ location+(1 | bodypart) ,data=shots.train, family = binomial)
+bmod2 <- stan_glm(result_id ~ distance + angles ,data=shots.train, family = binomial)
 ```
+
 ```{r}
 bmod2.pred <-  posterior_predict(bmod2, shots.test, type = "response")
 
 mean(bmod2.pred != is_goal.test)
+```
+
+### Bayesian Model 3 (distance * angles)
+
+```{r}
+bmod3 <- stan_glm(result_id ~ distance * angles ,data=shots.train, family = binomial)
+```
+
+```{r}
+bmod3.pred <- posterior_predict(bmod3, shots.test, type = "response")
+
+mean(bmod3.pred != is_goal.test)
+```
+
+### Bayesian Model 4 (distance + bodypart heirarchical variable)
+
+```{r}
+bhmod <- stan_glmer(result_id ~ distance + (1 | bodypart_id),
+                    data=shots.train, family = binomial)
 ```
 
