@@ -6,7 +6,7 @@ Use Bayesian methods to model the effects of various factors on the liklehood of
 
 ## Data: 
 
-https://figshare.com/collections/Soccer_match_event_dataset/4415000/5
+https://www.kaggle.com/datasets/aleespinosa/soccer-match-event-dataset
 
 ## Target Variable:
 
