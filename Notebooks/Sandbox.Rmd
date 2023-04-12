@@ -1,9 +1,13 @@
 ---
 title: "Sandbox"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
+    toc: yes
 ---
 
-#Libraries
+# Libraries
+
 ```{r}
 library(tidyverse)
 library(dplyr)
@@ -13,13 +17,18 @@ library(ggplot2)
 library(data.table)
 library(stringr)
 library(ggsoccer)
+library(jsonlite)
+library(gridExtra)
+library(stringi)
 ```
 
 # Data Loading
 
+We first want to load in the events data, which split across multiple csv files, grouped by country. To read this in, I have defined a loop that iterates through the data directory and appends each file to a data-frame.
+
 ```{r}
 #Define Data Directory
-dir_path <- "../Data"
+dir_path <- "../Data/events"
 
 #Get a list of files in the directory
 file_list <- list.files(dir_path)
@@ -38,17 +47,36 @@ for (i in 1:length(file_list)) {
 ```
 
 ```{r}
-#View the final data frame
+#View the events data frame
 actions
 ```
+
+We next want to load in the player data
+
+```{r}
+#Read in data
+players <- fromJSON("../Data/players/players.json")
+```
+
+```{r}
+#View player data
+players
+```
+
+Since the event data contains all sorts of event types, we now want to filter out only the shots.
 
 ```{r}
 # Extract observations of shots from the actions data 
 shots_df <- actions %>% dplyr::filter(subEventName == "Shot")
-shots_df
 ```
 
-We now use documentation from [here](https://dataglossary.wyscout.com/shot/) to mutate the data, and garner more useful data about the shot itself. 
+## Event Data
+
+The next section is dedicated to loading the event data
+
+### Categorical Data
+
+We now use documentation from [here](https://dataglossary.wyscout.com/shot/) to mutate the data, and garner more useful categorical data about the shot itself.
 
 ```{r}
 shots_df <- shots_df %>% 
@@ -60,16 +88,25 @@ shots_df <- shots_df %>%
          'is_CA' = ifelse(grepl(" 1901}", shots_df$tags),1,0),
          
          #If the shot is with the foot or another part of the body
-         'body_part' = ifelse(grepl(" 401}| 402}", shots_df$tags),"foot",
-                                   ifelse(grepl(" 403}", shots_df$tags), "head/body", "NA")),
+         'body_part' = ifelse(grepl(" 401}", shots_df$tags),"left",
+                              ifelse(grepl(" 402}", shots_df$tags), "right", 
+                                   ifelse(grepl(" 403}", shots_df$tags), "head/body", "NA"))),
          
+         #If the shot is blocked
          'is_blocked' = ifelse(grepl(" 2101}", shots_df$tags), 1,0))
 
-                    
+#Filter out only unblocked shots
 shots_df <- shots_df %>% dplyr::filter(is_blocked == 0)
 
-summary(shots_df)
+#Keep necessary categorical data
+shots_cat <- dplyr::select(shots_df, c('playerId', 'is_goal', 'is_CA', 'body_part'))
+
+summary(shots_cat)
 ```
+
+### Positional Data
+
+We now calculate the distance from the goal and angle to goal for each shot.
 
 First, we would like to define the position of each shot on the pitch
 
@@ -96,21 +133,12 @@ y_pos <- y_pos %>% as.numeric()
 ```
 
 ```{r}
-# Keep only necessary features
-shots <- dplyr::select(shots_df, c('playerId', 'is_goal', 'is_CA', 'body_part'))
-
+# Create coordinate dataframe
 coords <- data.frame(x_pos, y_pos)
-
-summary(shots)
-
-summary(coords)
-
-graph_shots <- data.frame(shots, x_pos, y_pos)
 ```
 
+We can now use these coordinates to calculate distance and angle to goal
 
-
-## Calculate Distance and Angle to goal
 ```{r}
 #Define length and width of pitch
 
@@ -128,10 +156,75 @@ dist <- sqrt((105 - x_meter)^2 + ((32.5) - y_meter)^2)
 angles <- atan( (7.32 * (105 - x_meter) ) / ( (105 - x_meter)^2 + (32.5 - y_meter)^2 - (7.32/2)^2 )) * 180/pi
 ```
 
+We can now merge our useful event data into one data-frame.
+
 ```{r}
-#Concatenate dataframes
-shots <- data.frame(shots, dist, angles)
+#Concatenate data-frames
+shots <- data.frame(shots_cat, dist, angles)
 ```
+
+## Player Data
+
+The next section is dedicated to loading the player data. For this, we simply filter only by the features that will prove useful later on.
+
+First lets retrieve a vector of all unique players in the current `shots` data-base:
+
+```{r}
+#Retrieves unique player ids
+player_list <- unique(shots$playerId)
+```
+
+We can now filter the `players` data-frame to only include these players
+
+```{r}
+#Filters by player ids between both data frames
+shooters <- dplyr::filter(players, wyId %in% player_list)
+```
+
+We can filter this data-frame by the features we need.
+
+```{r}
+#Selects necessary columns
+shooters <- dplyr::select(shooters, c('shortName', 'wyId', 'foot'))
+```
+
+Finally, we rename the some columns, for ease later on.
+
+```{r}
+#Renames columns
+colnames(shooters)[colnames(shooters) == "wyId"] <- "playerId"
+colnames(shooters)[colnames(shooters) == "foot"] <- "preferred_foot"
+```
+
+### Preferred Foot Data
+
+We will now introduce a preferred foot binary variable.
+
+First we merge all our useful data into one data-frame
+
+```{r}
+#Concatenate data-frames
+shots <- merge(shots, shooters, by = "playerId")
+```
+
+We now mutate this to add a column featuring the desired binary variable
+
+```{r}
+#Adds preferred foot binary column
+shots <- shots %>% 
+  mutate(preferred_foot_b = ifelse(shots$preferred_foot == shots$body_part, 1, 0))
+```
+
+Finally, we remove the `preferred_foot` column
+
+```{r}
+#Removes desired column
+shots <- shots %>% dplyr::select(-c("preferred_foot"))
+```
+
+## Data Cleaning/Wrangling
+
+Since much of our data is categorical, it is necessary to convert it to the factor type.
 
 ```{r}
 #Convert necessary variables to factor 
@@ -142,68 +235,77 @@ shots$body_part <- shots$body_part %>% as.factor()
 
 shots$is_CA <- shots$is_CA %>% as.factor()
 
+shots$preferred_foot_b <- shots$preferred_foot_b %>% as.factor()
+
+shots$shortName <- shots$shortName %>% as.factor()
+```
+
+Now lets view a summary of our data
+
+```{r}
 summary(shots)
 ```
-We can see from the summary, there are negative angles in the data, to investigate this further we can look at a histogram
+
+### Player Names
+
+If we view a random subset of our data, we observe a problem decoding unicode characters:
+
+```{r}
+shots[90:100,]
+```
+
+So we use the following chunk to decode them
+
+```{r}
+shots$shortName <- stringi::stri_unescape_unicode(shots$shortName)
+```
+
+### Negative Angles
+
+We can see from the summary there are negative angles in the data, to investigate this further we can look at a histogram
 
 ```{r}
 hist(shots$angles)
 ```
-We observe that there are some negative angles. Since most of the angles are correctly positive, I will remove the negative ones from the analysis.
+
+We observe that there are multiple negative angles. Since most of the angles are correctly positive, we will remove the negative ones from the analysis.
 
 ```{r}
 shots <- shots %>% dplyr::filter(shots$angles > 0)
 ```
 
-To see the correct histogram
+To see the corrected histogram
 
 ```{r}
 hist(shots$angles)
 ```
 
-As expected, there are far more failed attempts at goal than successful ones. Taking advice from here, we will sub-sample to create a more balanced data-set.
+### Player Downsampling
+
+Later on we will use `playerId` to group the data. Since our data-set is large and spans many countries, there are many different players in the data-set
 
 ```{r}
-#Split Dataframe into success and fail shots
-#shots_success <- subset(shots, shots$result_id == 1)
-#shots_fail <- subset(shots, shots$result_id == 0)
-
-#Sample from each subset
-#shots_success <- shots_success %>% sample_n(10000)
-#shots_fail <- shots_fail %>% sample_n(10000)
-
-#Bind them back together
-#shots_sub <- rbind(shots_success, shots_fail)
-
-shots_sub <- shots
+length(table(shots$playerId))
 ```
 
-We see that the dimension is correct, and that the data is perfectly balanced.
+We see there are 2293 unique player included in the data-set
+
+With this in hand, it would be sensible to limit the amount of "groups" (players) to, say 50. In order to preserve the greatest amount of data, we will use the top 50 most occurring player names.
+
 ```{r}
-dim(shots_sub)
+top_players <- sort(table(shots$playerId), decreasing = T)[1:50]
 ```
 
+Now we filter the data based on these players
+
 ```{r}
-summary(shots_sub)
+top_shots <- dplyr::filter(shots, playerId %in% row.names(top_players))
 ```
 
-From this summary, we observe that distance and angles are extremely skewed, and so the next chunk applies a log transformation to these variables
+We now view a summary of our final data
 
 ```{r}
-#Calculate log distances and angles
-shots_sub$dist <- log(shots_sub$dist)
-shots_sub$angles <- log(shots_sub$angles)
-```
-
-We can now split the data into train and test sets
-```{r}
-# Split into test and train subsets
-train.size <- nrow(shots_sub) / 2
-train <- sample(1:nrow(shots_sub), train.size)
-test <- -train
-shots.train <- shots_sub[train, ]
-shots.test <- shots_sub[test, ]
-is_goal.test <-  shots_sub$is_goal[test]
+summary(top_shots)
 ```
 
 # Data Exploration
@@ -211,129 +313,101 @@ is_goal.test <-  shots_sub$is_goal[test]
 To better understand our distance and angle data, we can create the following boxplots
 
 ```{r}
-boxplot(dist ~ is_goal, data=shots_sub,xlab='Failure or Success', ylab = 'Distance to goal')
+#Defines and distance boxplot
+
+dist_boxplot <- ggplot(top_shots, aes(x=is_goal, y=dist, fill = is_goal)) + 
+                geom_boxplot() +
+                labs(title="Distributions Of Distances Grouped By Shot Outcome", 
+                     x="Shot Outcome", 
+                     y="Distance To Goal (m)") + 
+                coord_flip()
+
+dist_boxplot <- dist_boxplot + guides(fill=guide_legend(title="Goal (1) or Not (0)"))
+
+#Defines angles boxplot
+
+angles_boxplot <- ggplot(top_shots, aes(x=is_goal, y=angles, fill = is_goal)) + 
+                  geom_boxplot() + 
+                  labs(title="Distributions Of Angles Grouped By Shot Outcome", 
+                     x="Shot Outcome", 
+                     y="Angle To Goal (Degrees)") +
+                  coord_flip()
+
+angles_boxplot <- angles_boxplot + guides(fill=guide_legend(title="Goal (1) or Not (0)"))
+
+#Plots distance boxplot
+dist_boxplot
 ```
+```{r}
+#Plots angles boxplot
+angles_boxplot
+```
+From these we observe there must is likely some relationship between the outcome of a shot and the position from which it is taken.
+
+We now visualise the frequency at which each player takes a shot
+
+Firstly, we need to wrangle the data a bit more:
 
 ```{r}
-boxplot(angles ~ is_goal, data=shots_sub,xlab='Failure or Success', ylab = 'Angle to goal')
+#Create data-frame from top_players table defined earlier
+top_players_df <- data.frame(top_players)
+
+#Rename columns
+colnames(top_players_df)[colnames(top_players_df) == "Var1"] <- "playerId"
+colnames(top_players_df)[colnames(top_players_df) == "Freq"] <- "shotVolume"
+
+#We add a column containing player name
+top_players_df <- merge(top_players_df, distinct(top_shots[, c("playerId", "shortName")]), by = "playerId")
+
+#We create a dataframe where the is_goal variable is numeric
+numeric_goals <- top_shots[, c("shortName", "is_goal")]
+numeric_goals$is_goal <- as.numeric(as.character(numeric_goals$is_goal))
+
+#We sum up goals scored by player
+summed_goals <- numeric_goals %>%
+  group_by(shortName) %>% 
+  summarise(goals = sum(is_goal))
+
+#Merge to final data-frame
+shots_goals <- merge(top_players_df, summed_goals, by = "shortName") 
+
+#Sort in descending order by shot volume
+shots_goals <- arrange(shots_goals, desc(shotVolume))
+shots_goals$shortName <- shots_goals$shortName %>% as.factor()
 ```
 
-It is likely that distance and angles have some sort of relationship.
+Now we visualise the results
 
-```{r}
-plot(shots_sub$angles, shots_sub$dist)
-```
-We now visualise the distribution of distances 
+```{r width = 5}
 
-```{r}
-hist(shots_sub$dist)
+shots_goals_long <- gather(shots_goals, key = var, value = value, shotVolume, goals)
+
+shots_goals_plot <- ggplot(shots_goals_long, aes(x=reorder(shortName, -value), y = value, fill = var)) +
+                    geom_col(position = "identity", width = 0.9) +
+                    labs(title="Shots And Goals By Player", 
+                     x="Players", 
+                     y="Volume") +
+                    scale_x_discrete(guide = guide_axis(angle = 60))
+
+shots_goals_plot <- shots_goals_plot + guides(fill=guide_legend(title="Key"))
+
+shots_goals_plot
+                    
 ```
-And for the angles to goal 
+We can see from the plot, that there is some difference in a players ability to convert a shot. We can exploit this difference by adding another level to our models.
 
 # Fitting Models
 
-## Simple Logistic Regression Models 
+## Data Splitting
+
+Since our data-set is somewhat small, it would be wise to have an uneven split of test and train data. This is carried out in the following chunk.
 
 ```{r}
-#Fit Logistic Regression
-glm_1 <- glm(is_goal ~ dist, family = "binomial", data = shots.train)
-
-#Calculate mis-classification
-glm_1_probs <-  predict(glm_1, shots.test, type = "response")
-glm_1_pred <-  rep(0, length(glm_1_probs))
-glm_1_pred[glm_1_probs > 0.5] <- 1
-
-mean(glm_1_pred != is_goal.test)
+# Split into test and train subsets
+train.size <- 0.8 * nrow(top_shots) 
+train <- sample(1:nrow(top_shots), train.size)
+test <- -train
+shots.train <- top_shots[train, ]
+shots.test <- top_shots[test, ]
+is_goal.test <-  top_shots$is_goal[test]
 ```
-
-```{r}
-#Fit Logistic Regression
-glm_2 <- glm(is_goal ~ dist + angles, family = "binomial", data = shots.train)
-
-#Calculate mis-classification
-glm_2_probs <-  predict(glm_2, shots.test, type = "response")
-glm_2_pred <-  rep(0, length(glm_2_probs))
-glm_2_pred[glm_2_probs > 0.5] <- 1
-
-mean(glm_2_pred != is_goal.test)
-```
-```{r}
-#Fit Logistic Regression
-glm_3 <- glm(is_goal ~ dist + angles + body_part, family = "binomial", data = shots.train)
-
-#Calculate mis-classification
-glm_3_probs <-  predict(glm_3, shots.test, type = "response")
-glm_3_pred <-  rep(0, length(glm_3_probs))
-glm_3_pred[glm_3_probs > 0.5] <- 1
-
-mean(glm_3_pred != is_goal.test)
-```
-
-
-## Bayesian Logistic Regression
-
-### Bayesian Model 1 (distance)
-
-```{r}
-#Fit the model
-bmod1 = stan_glm(result_id ~ distance,data=shots.train, family = binomial)
-```
-
-```{r}
-#Model Summary
-bmod1
-```
-
-```{r}
-#Summary data on the priors
-prior_summary(bmod1)
-```
-
-```{r}
-#Retrieve and print posterior interval for the model
-ci95_1 <- posterior_interval(bmod1, prob = 0.95)
-round(ci95_1, 2)
-```
-
-```{r}
-#Launch shinystan
-launch_shinystan(bmod1, ppd = FALSE)
-```
-
-```{r}
-#Calculate misclassification
-bmod1.pred <-  posterior_predict(bmod1, shots.test, type = "response")
-
-mean(bmod1.pred != is_goal.test)
-```
-### Bayesian Model 2 (distance + angles)
-
-```{r}
-bmod2 <- stan_glm(result_id ~ distance + angles ,data=shots.train, family = binomial)
-```
-
-```{r}
-bmod2.pred <-  posterior_predict(bmod2, shots.test, type = "response")
-
-mean(bmod2.pred != is_goal.test)
-```
-
-### Bayesian Model 3 (distance * angles)
-
-```{r}
-bmod3 <- stan_glm(result_id ~ distance * angles ,data=shots.train, family = binomial)
-```
-
-```{r}
-bmod3.pred <- posterior_predict(bmod3, shots.test, type = "response")
-
-mean(bmod3.pred != is_goal.test)
-```
-
-### Bayesian Model 4 (distance + bodypart heirarchical variable)
-
-```{r}
-bhmod <- stan_glmer(result_id ~ distance + (1 | bodypart_id),
-                    data=shots.train, family = binomial)
-```
-
