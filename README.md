@@ -1,4 +1,4 @@
-# ST308-Project
+# Bayes-xG-Model
 
 ## Aim: 
 
