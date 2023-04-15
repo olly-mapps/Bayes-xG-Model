@@ -10,16 +10,22 @@ output:
 
 ```{r}
 library(tidyverse)
-library(dplyr)
 library(MASS)
 library(rstanarm)
-library(ggplot2)
 library(data.table)
-library(stringr)
 library(ggsoccer)
 library(jsonlite)
 library(gridExtra)
 library(stringi)
+library(rstan)
+library(bayesplot)
+```
+
+We also run the following code for making the usage of `rstan` easier later on.
+
+```{r}
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
 ```
 
 # Data Loading
@@ -288,7 +294,7 @@ Later on we will use `playerId` to group the data. Since our data-set is large a
 length(table(shots$playerId))
 ```
 
-We see there are 2293 unique player included in the data-set
+We see there are 2292 unique player included in the data-set
 
 With this in hand, it would be sensible to limit the amount of "groups" (players) to, say 50. In order to preserve the greatest amount of data, we will use the top 50 most occurring player names.
 
@@ -307,10 +313,17 @@ We now view a summary of our final data
 ```{r}
 summary(top_shots)
 ```
+### Numbering Of Players
+
+In some of our later models, it is necessary to number the players from 1 to 50. This step is carried out below.
+
+```{r}
+top_shots$bayes_id <- as.numeric(as.factor(top_shots$shortName)) 
+```
 
 # Data Exploration
 
-To better understand our distance and angle data, we can create the following boxplots
+To better understand our distance and angle data, we can create the following boxplots.
 
 ```{r}
 #Defines and distance boxplot
@@ -411,3 +424,163 @@ shots.train <- top_shots[train, ]
 shots.test <- top_shots[test, ]
 is_goal.test <-  top_shots$is_goal[test]
 ```
+
+## Non-Baysian Models
+
+### `is_goal` ~ `dist` 
+
+First we will fit some simple logistic regression models 
+
+```{r}
+glm1 <- glm(is_goal ~ dist, data = top_shots, family = binomial())
+
+summary(glm1)
+```
+
+### `is_goal` ~ `dist` + `angles`
+
+```{r}
+glm2 <- glm(is_goal ~ dist + angles, data = top_shots, family = binomial())
+
+summary(glm2)
+```
+
+### `is_goal` ~ `.`
+
+```{r}
+glm3 <- glm(is_goal ~ . - shortName - playerId, data = top_shots, family = binomial())
+
+summary(glm3)
+```
+
+## Bayesian Linear Regression 
+
+### Single-Level Models
+
+#### `is_goal` ~ `dist`
+
+
+```{r}
+bmod1_list <- list(y = as.numeric(as.character(shots.train$is_goal)),
+                 n = dim(shots.train)[1],
+                 X = shots.train$dist,
+                 
+                 n_new = dim(shots.test)[1],
+                 X_new = shots.test$dist,
+                 
+                 beta_mu = 19,
+                 beta_sigma = 10)
+
+
+bmod1 <- stan(file = "../Stan Files/dist.stan", data = bmod1_list, chains = 4, init = 0, seed = 1)
+          
+```
+
+```{r}
+print(bmod1, pars="beta")
+```
+
+```{r}
+plot(bmod1, pars="beta")
+```
+
+```{r}
+traceplot(bmod1, pars='beta')
+```
+
+```{r}
+ext_fit <- extract(bmod1)
+mean(apply(ext_fit$y_new, 2, median) == is_goal.test)
+```
+```{r}
+launch_shinystan(bmod1)
+```
+
+#### `is_goal` ~ `dist` + `angles`
+
+```{r}
+bmod2_list <- list(y = as.numeric(as.character(shots.train$is_goal)),
+                 n = dim(shots.train)[1],
+                 X = shots.train[c("dist", "angles")],
+                 p = 2,
+                 
+                 n_new = dim(shots.test)[1],
+                 X_new = shots.test[c("dist", "angles")],
+                 
+                 beta_mu_1 = 19,
+                 beta_sigma_1 = 10,
+                 beta_mu_2 = 30,
+                 beta_sigma_2 = 10
+                 )
+
+
+bmod2 <- stan(file = "../Stan Files/dist+angles.stan", data = bmod2_list, chains = 4, init = 0, seed = 1)
+```
+
+```{r}
+print(bmod2, pars="beta")
+```
+
+```{r}
+plot(bmod2, pars="beta")
+```
+
+```{r}
+traceplot(bmod2, pars='beta')
+```
+
+```{r}
+ext_fit <- extract(bmod2)
+mean(apply(ext_fit$y_new, 2, median) == is_goal.test)
+```
+
+```{r}
+launch_shinystan(bmod2)
+```
+
+### Heirarchical Models 
+
+#### `is_goal` ~ `distance` + (1 | `shortName`)
+
+```{r}
+bmod3_list <- list(y = as.numeric(as.character(shots.train$is_goal)),
+                 n = dim(shots.train)[1],
+                 X = shots.train$dist,
+                 p = length(unique(shots.train$bayes_id)),
+                 player = top_shots$bayes_id,
+                 
+                 #n_new = dim(shots.test)[1],
+                 #X_new = shots.test$dist,
+                 
+                 beta_mu = 19,
+                 beta_sigma = 10,
+                 beta_mu_mu = 30,
+                 beta_mu_sigma = 10,
+                 beta_sigma_rate = 0.5
+                 )
+
+bmod3 <- stan(file = "../Stan Files/dist+shortName.stan", data = bmod3_list, chains = 1, init = 0, seed = 1)
+```
+```{r}
+#print(bmod3, pars="beta")
+```
+
+```{r}
+#plot(bmod3, pars="beta")
+```
+
+```{r}
+#traceplot(bmod3, pars='beta')
+```
+
+```{r}
+#ext_fit <- extract(bmod3)
+#mean(apply(ext_fit$y_new, 2, median) == is_goal.test)
+```
+
+```{r}
+#launch_shinystan(bmod3)
+```
+
+
+
