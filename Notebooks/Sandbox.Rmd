@@ -646,22 +646,22 @@ bhmod1_list <- list(y = as.numeric(as.character(shots.train$is_goal)),
                  )
 
 #Runs stan
-bmod3 <- stan(file = "../Stan Files/dist+shortName.stan", data = bmod3_list, chains = 4, init = 0, seed = 1)
+bhmod1 <- stan(file = "../Stan Files/dist+shortName.stan", data = bhmod1_list, chains = 4, init = 0, seed = 1)
 ```
 
 ```{r}
-print(bmod3, pars="beta")
+print(bhmod1, pars="beta")
 ```
 
 ```{r}
 launch_shinystan(bmod3)
 ```
 
-We next visualise a prediction of the model, to emphasies how this new models now considers player abilities.
+We next visualise a prediction of the model, to emphasies how this new model now considers player abilities.
 
 ```{r}
 #Extracts generated quantities
-ext_fit_4 <- extract(bmod3)
+ext_fit_4 <- extract(bhmod1)
 
 #Constructs a data-frame
 salah_pp <- data.frame(Population = ext_fit_4$pp_y_new, MohamedSalah = ext_fit_4$salah_y_new)
@@ -683,5 +683,49 @@ salah_pp_plot <- salah_pp_plot + guides(fill=guide_legend(title="Key"))
 salah_pp_plot
 ```
 
+#### `is_goal` ~ `distance` + `angles` + `body_part` + (1 | `shortName`)
+
+We finally consider our final model, a hierarchical model with all the most important parameters included
+
+```{r}
+#First create design matrices
+bhmod2_X <- model.matrix(is_goal ~ dist + body_part + angles, data = shots.train)
+
+bhmod2_X_new <- model.matrix(is_goal ~ dist + body_part + angles, data = shots.test)
+```
+
+```{r}
+#Defines list for stan
+bhmod2_list <- list(y = as.numeric(as.character(shots.train$is_goal)),
+                 n = dim(shots.train)[1],
+                 pred = 5,
+                 X = bhmod2_X,
+                 
+                 #Defines Grouping
+                 players = length(unique(shots.train$bayes_id)),
+                 player = shots.train$bayes_id,
+                 
+                 #Predictive Inputs
+                 n_new = dim(shots.test)[1],
+                 X_new = bhmod2_X_new,
+                 
+                 #Hyper-Prior Parameters
+                 alpha_mu_mu = 10,
+                 alpha_mu_sigma = 10,
+                 alpha_sigma_rate = 0.5,
+                 
+                 dist_beta_mu_mu = 19,
+                 dist_beta_mu_sigma = 10,
+                 dist_beta_sigma_rate = 0.5,
+                 
+                 angle_beta_mu_mu = 30,
+                 angle_beta_mu_sigma = 10,
+                 angle_beta_sigma_rate = 0.5
+                 )
+```
+
+```{r}
+bhmod2 <- stan(file = "../Stan Files/dist+body+angle+shortName.stan", data = bhmod2_list, chains = 1, init = 0, seed = 1)
+```
 
 

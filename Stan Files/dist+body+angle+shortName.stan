@@ -3,37 +3,34 @@ data {
   //Model Inputs
 
   int<lower=0> n;
-
-  int<lower=0> p;
-
+  int<lower=0> pred;
   int<lower=0> players; 
 
   int<lower=0, upper = players> player[n];
 
-  matrix[n,p] X;
+  matrix[n,pred] X;
 
   int<lower = 0, upper = 1> y[n];
 
   //Hyper-Prior Parameters
 
-  real alpha_mu_mu;
-  real alpha_mu_sigma;
-
-  real angle_beta_sigma_rate;
-  real dist_beta_sigma_rate;
-  real alpha_sigma_rate;
-
   real dist_beta_mu_mu;
   real dist_beta_mu_sigma;
-
+  
   real angle_beta_mu_mu;
   real angle_beta_mu_sigma;
 
+  real alpha_mu_mu;
+  real alpha_mu_sigma;
+
+  real dist_beta_sigma_rate;
+  real angle_beta_sigma_rate;
+  real alpha_sigma_rate;
 
   //Predictive Parameters
 
   int<lower=0> n_new;
-  matrix[n_new,p] X_new;
+  matrix[n_new,pred] X_new;
 
 }
 
@@ -41,13 +38,7 @@ parameters {
 
   //Model Parameters
 
-  vector[players] dist_beta;
-
-  vector[players] angle_beta;
-
-  vector[players] body_beta;
-
-  vector[players] alpha;
+  vector[pred] beta[players];
 
   //Prior Parameters
 
@@ -66,15 +57,17 @@ model {
 
   //Model
 
-  y ~ bernoulli_logit(alpha[player] + X .* (dist_beta[player] + angle_beta[player] + body_beta[player]);
+  for (i in 1:n){
+    y[i] ~ bernoulli_logit(X[i] * beta[player[i]]);
+  }
 
   //Priors
 
-  dist_beta ~ normal(dist_beta_mu, dist_beta_sigma);
+  beta[2] ~ normal(dist_beta_mu, dist_beta_sigma);
 
-  angle_beta ~ normal(angle_beta_mu, angle_beta_sigma);
+  beta[5] ~ normal(angle_beta_mu, angle_beta_sigma);
 
-  alpha ~ normal(alpha_mu, alpha_sigma);
+  beta[1] ~ normal(alpha_mu, alpha_sigma);
 
   //Hyper-Priors
 
@@ -95,14 +88,13 @@ generated quantities {
 
   //Gather Predictions
 
-  real salah_y_new;
+  //real salah_y_new;
 
-  salah_y_new = inv_logit(alpha[35] + X_new[8].*beta[35]);
+  //salah_y_new = inv_logit(X_new[8].*beta[35]);
 
-  real alpha_pp = normal_rng(alpha_mu, alpha_sigma);
-  real beta_pp = normal_rng(beta_mu, beta_sigma);
+  //real beta_pp = normal_rng(beta_mu, beta_sigma);
 
-  real pp_y_new = inv_logit(alpha_pp + X_new[8]*beta_pp); 
+  //real pp_y_new = inv_logit(X_new[8]*beta_pp); 
 
 
 
