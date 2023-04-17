@@ -1,6 +1,6 @@
 data {
   
-  //Model Structure
+  //Model Inputs
 
   int<lower=0> n;
   int<lower=0> p;
@@ -9,13 +9,14 @@ data {
 
   //Prior Parameters
 
-  real beta_mu;
-  real beta_sigma;
+  real beta_mu_dist;
+  real beta_sigma_dist;
 
   //Predictive Parameters
 
   int<lower=0> n_new;
   matrix[n_new,p] X_new;
+
 }
 
 parameters {
@@ -29,7 +30,7 @@ model {
 
   //Priors
 
-  beta[2] ~ normal(beta_mu, beta_sigma);
+  beta[2] ~ normal(beta_mu_dist, beta_sigma_dist);
 
   //Model
 
@@ -40,7 +41,7 @@ model {
 generated quantities {
 
   //Gather Predictions
-  
+
   vector[n_new] y_new;
 
   for (i in 1:n_new)

@@ -9,11 +9,11 @@ data {
 
   //Prior Parameters
 
-  real beta_mu_1;
-  real beta_sigma_1;
+  real beta_mu_dist;
+  real beta_sigma_dist;
 
-  real beta_mu_2;
-  real beta_sigma_2;
+  real beta_mu_angle;
+  real beta_sigma_angle;
 
   //Predictive Parameters
 
@@ -34,9 +34,9 @@ model {
 
   //Priors
 
-  beta[1] ~ normal(beta_mu_1, beta_sigma_1);
+  beta[2] ~ normal(beta_mu_dist, beta_sigma_dist);
 
-  beta[2] ~ normal(beta_mu_2, beta_sigma_2);
+  beta[5] ~ normal(beta_mu_angle, beta_sigma_angle);
 
   //Model
 

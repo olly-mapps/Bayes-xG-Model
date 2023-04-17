@@ -3,29 +3,37 @@ data {
   //Model Inputs
 
   int<lower=0> n;
+
+  int<lower=0> p;
+
   int<lower=0> players; 
 
   int<lower=0, upper = players> player[n];
 
-  vector[n] X;
+  matrix[n,p] X;
 
   int<lower = 0, upper = 1> y[n];
 
   //Hyper-Prior Parameters
 
-  real beta_mu_mu;
-  real beta_mu_sigma;
-
   real alpha_mu_mu;
   real alpha_mu_sigma;
 
-  real beta_sigma_rate;
+  real angle_beta_sigma_rate;
+  real dist_beta_sigma_rate;
   real alpha_sigma_rate;
+
+  real dist_beta_mu_mu;
+  real dist_beta_mu_sigma;
+
+  real angle_beta_mu_mu;
+  real angle_beta_mu_sigma;
+
 
   //Predictive Parameters
 
   int<lower=0> n_new;
-  vector[n_new] X_new;
+  matrix[n_new,p] X_new;
 
 }
 
@@ -33,14 +41,21 @@ parameters {
 
   //Model Parameters
 
-  vector[players] beta;
+  vector[players] dist_beta;
+
+  vector[players] angle_beta;
+
+  vector[players] body_beta;
 
   vector[players] alpha;
 
   //Prior Parameters
 
-  real beta_mu;
-  real <lower = 0> beta_sigma;
+  real dist_beta_mu;
+  real <lower = 0> dist_beta_sigma;
+
+  real angle_beta_mu;
+  real <lower = 0> angle_beta_sigma;
 
   real alpha_mu;
   real <lower = 0> alpha_sigma;
@@ -51,19 +66,25 @@ model {
 
   //Model
 
-  y ~ bernoulli_logit(alpha[player] + X .* beta[player]);
+  y ~ bernoulli_logit(alpha[player] + X .* (dist_beta[player] + angle_beta[player] + body_beta[player]);
 
   //Priors
 
-  beta ~ normal(beta_mu, beta_sigma);
+  dist_beta ~ normal(dist_beta_mu, dist_beta_sigma);
+
+  angle_beta ~ normal(angle_beta_mu, angle_beta_sigma);
 
   alpha ~ normal(alpha_mu, alpha_sigma);
 
   //Hyper-Priors
 
-  beta_mu ~ normal(beta_mu_mu, beta_mu_sigma);
+  dist_beta_mu ~ normal(dist_beta_mu_mu, dist_beta_mu_sigma);
 
-  beta_sigma ~ exponential(beta_sigma_rate);
+  dist_beta_sigma ~ exponential(dist_beta_sigma_rate);
+
+  angle_beta_mu ~ normal(angle_beta_mu_mu, angle_beta_mu_sigma);
+
+  angle_beta_sigma ~ exponential(angle_beta_sigma_rate);
 
   alpha_mu ~ normal(alpha_mu_mu, alpha_mu_sigma);
 
@@ -86,4 +107,3 @@ generated quantities {
 
 
 }
-
