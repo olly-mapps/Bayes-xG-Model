@@ -360,7 +360,31 @@ angles_boxplot
 ```
 From these we observe there must is likely some relationship between the outcome of a shot and the position from which it is taken.
 
-We now visualise the frequency at which each player takes a shot
+Next, in order to motivate prior elicitation, we consider the distribution of our most important parameters.
+
+```{r}
+dist_dist <- ggplot(top_shots, aes(x=dist)) + 
+                geom_histogram(fill = "#00BFC4") +
+                labs(title="Distributions Of Distances", 
+                     x="Distance (m)", 
+                     y="Volume") 
+
+dist_dist
+```
+```{r}
+angle_dist <- ggplot(top_shots, aes(x=angles)) + 
+                geom_histogram(fill = "#00bfc4") +
+                labs(title="Distributions Of Angles", 
+                     x="Angle (Degrees)", 
+                     y="Volume") 
+
+angle_dist
+```
+
+
+
+
+We now visualise the frequency at which each player takes a shot, and its corresponding success
 
 Firstly, we need to wrangle the data a bit more:
 
@@ -439,9 +463,21 @@ is_goal.test <-  top_shots$is_goal[test]
 First we will fit some simple logistic regression models 
 
 ```{r}
-glm1 <- glm(is_goal ~ dist, data = top_shots, family = binomial())
+glm1 <- glm(is_goal ~ dist, data = shots.train, family = binomial())
 
 summary(glm1)
+confint(glm1)
+```
+```{r}
+probs <- predict(glm1, data = shots.test, type = "response")
+
+# Convert probabilities to binary predictions
+predictions <- ifelse(probs > 0.5, 1, 0)
+
+# Calculate accuracy
+accuracy <- mean(predictions == is_goal.test)
+
+accuracy
 ```
 
 ### `is_goal` ~ `dist` + `angles`
@@ -450,6 +486,7 @@ summary(glm1)
 glm2 <- glm(is_goal ~ dist + angles, data = top_shots, family = binomial())
 
 summary(glm2)
+confint(glm2)
 ```
 
 ### `is_goal` ~ `.`
