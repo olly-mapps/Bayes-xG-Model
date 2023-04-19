@@ -16,11 +16,11 @@ data {
   real beta_mu_mu;
   real beta_mu_sigma;
 
-  real alpha_mu_mu;
-  real alpha_mu_sigma;
+  //real alpha_mu_mu;
+  //real alpha_mu_sigma;
 
   real beta_sigma_rate;
-  real alpha_sigma_rate;
+  //real alpha_sigma_rate;
 
   //Predictive Parameters
 
@@ -35,15 +35,15 @@ parameters {
 
   vector[players] beta;
 
-  vector[players] alpha;
+  real alpha;
 
   //Prior Parameters
 
   real beta_mu;
   real <lower = 0> beta_sigma;
 
-  real alpha_mu;
-  real <lower = 0> alpha_sigma;
+  //real alpha_mu;
+  //real <lower = 0> alpha_sigma;
 
 }
 
@@ -51,13 +51,13 @@ model {
 
   //Model
 
-  y ~ bernoulli_logit(alpha[player] + X .* beta[player]);
+  y ~ bernoulli_logit(alpha + X .* beta[player]);
 
   //Priors
 
   beta ~ normal(beta_mu, beta_sigma);
 
-  alpha ~ normal(alpha_mu, alpha_sigma);
+  //alpha ~ normal(alpha_mu, alpha_sigma);
 
   //Hyper-Priors
 
@@ -65,9 +65,9 @@ model {
 
   beta_sigma ~ exponential(beta_sigma_rate);
 
-  alpha_mu ~ normal(alpha_mu_mu, alpha_mu_sigma);
+  //alpha_mu ~ normal(alpha_mu_mu, alpha_mu_sigma);
 
-  alpha_sigma ~ exponential(alpha_sigma_rate);
+  //alpha_sigma ~ exponential(alpha_sigma_rate);
 }
 
 generated quantities {
@@ -76,12 +76,12 @@ generated quantities {
 
   real salah_y_new;
 
-  salah_y_new = inv_logit(alpha[35] + X_new[8].*beta[35]);
+  salah_y_new = inv_logit(alpha + X_new[8].*beta[35]);
 
-  real alpha_pp = normal_rng(alpha_mu, alpha_sigma);
+  //real alpha_pp = normal_rng(alpha_mu, alpha_sigma);
   real beta_pp = normal_rng(beta_mu, beta_sigma);
 
-  real pp_y_new = inv_logit(alpha_pp + X_new[8]*beta_pp); 
+  real pp_y_new = inv_logit(alpha + X_new[8]*beta_pp); 
 
 
 
