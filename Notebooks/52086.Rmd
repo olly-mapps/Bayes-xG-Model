@@ -1,10 +1,19 @@
 ---
-title: "Sandbox"
+title: "52086"
 output:
   html_document:
     df_print: paged
     toc: yes
 ---
+
+# README
+
+Our data can be found [here](https://www.kaggle.com/datasets/aleespinosa/soccer-match-event-dataset).
+
+We only used a select number of files, and they are in the Data.zip file attached with the submission. The size of the csv files were very large, and hence the reason for compressing it.
+
+Included in my submission is the file structure used throughout the research, and if Data.zip is unzipped where it is the following notebook will compile.
+
 
 # Libraries
 
